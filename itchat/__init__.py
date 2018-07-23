@@ -20,6 +20,7 @@ originInstance = new_instance()
 
 # components.login
 login                       = originInstance.login
+new_login                   = originInstance.new_login
 get_QRuuid                  = originInstance.get_QRuuid
 get_QR                      = originInstance.get_QR
 check_login                 = originInstance.check_login

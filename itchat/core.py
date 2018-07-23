@@ -27,10 +27,10 @@ class Core(object):
         self.functionDict = {'FriendChat': {}, 'GroupChat': {}, 'MpChat': {}}
         self.useHotReload, self.hotReloadDir = False, 'itchat.pkl'
         self.receivingRetryCount = 5
-        
+
         # cus add
         self.downloadselfheadimg = True
-        
+
     def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
             loginCallback=None, exitCallback=None):
         ''' log in like web wechat does
@@ -132,7 +132,7 @@ class Core(object):
             it is defined in components/login.py
         '''
         raise NotImplementedError()
-    def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
+    def start_receiving(self, exitCallback=None, getReceivingFnOnly=False,signal_m=None):
         ''' open a thread for heart loop and receiving messages
             for options:
                 - exitCallback: callback after logged out
@@ -349,7 +349,7 @@ class Core(object):
         ''' send attachment
             for options
                 - fileDir: dir for file ready for upload
-                - mediaId: mediaId for file. 
+                - mediaId: mediaId for file.
                     - if set, file will not be uploaded twice
                 - toUserName: 'UserName' key of friend dict
             it is defined in components/messages.py
@@ -360,7 +360,7 @@ class Core(object):
             for options
                 - fileDir: dir for file ready for upload
                     - if it's a gif, name it like 'xx.gif'
-                - mediaId: mediaId for file. 
+                - mediaId: mediaId for file.
                     - if set, file will not be uploaded twice
                 - toUserName: 'UserName' key of friend dict
             it is defined in components/messages.py
@@ -371,7 +371,7 @@ class Core(object):
             for options
                 - fileDir: dir for file ready for upload
                     - if mediaId is set, it's unnecessary to set fileDir
-                - mediaId: mediaId for file. 
+                - mediaId: mediaId for file.
                     - if set, file will not be uploaded twice
                 - toUserName: 'UserName' key of friend dict
             it is defined in components/messages.py
@@ -508,5 +508,7 @@ class Core(object):
         return self.storageClass.search_chatrooms(name, userName)
     def search_mps(self, name=None, userName=None):
         return self.storageClass.search_mps(name, userName)
+    def getself_head_img(self,headurl,username=None):
+        raise NotImplementedError()
 
 load_components(Core)

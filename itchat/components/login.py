@@ -4,6 +4,7 @@ import threading
 import json, xml.dom.minidom
 import random
 import traceback, logging
+
 try:
     from httplib import BadStatusLine
 except ImportError:
@@ -13,11 +14,12 @@ import requests
 from pyqrcode import QRCode
 
 from .. import config, utils
+from ..utils import test_connect
 from ..returnvalues import ReturnValue
 from ..storage.templates import wrap_user_dict
 from .contact import update_local_chatrooms, update_local_friends
 from .messages import produce_msg
-
+from PIL import Image as pilimgtools, ImageTk
 logger = logging.getLogger('itchat')
 
 def load_login(core):
@@ -32,6 +34,7 @@ def load_login(core):
     core.get_msg           = get_msg
     core.logout            = logout
     core.new_login         = new_login
+    core.getself_head_img  = getself_head_img
 
 def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
         loginCallback=None, exitCallback=None):
@@ -71,7 +74,8 @@ def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
     else:
         return # log in process is stopped by user
     logger.info('Loading the contact, this may take a little while.')
-    self.web_init()
+    userinfo = self.web_init()
+    print(userinfo)
     self.show_mobile_login()
     self.get_contact(True)
     if hasattr(loginCallback, '__call__'):
@@ -80,8 +84,22 @@ def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
         utils.clear_screen()
         if os.path.exists(picDir or config.DEFAULT_QR):
             os.remove(picDir or config.DEFAULT_QR)
-        logger.info('Login successfully as %s' % self.storageClass.nickName)
-    self.start_receiving(exitCallback)
+        print('Login successfully as %s' % self.storageClass.nickName)
+    if self.downloadselfheadimg:
+        print('#download self head image! ')
+        try:
+            temp=self.getself_head_img(userinfo['User']["HeadImgUrl"],userinfo['User']["UserName"])
+            im = pilimgtools.open(io.BytesIO(temp))
+            im.save(os.path.join('dist',userinfo['User']["UserName"]),'png')
+        except Exception:
+            print(u'加载自己的头像失败： ')
+    else:
+        print('#self head image has download ! ')
+        im = pilimgtools.open(os.path.join('dist','self'))
+        im.save(os.path.join('dist',userinfo['User']['UserName']),'png')
+    print('#init main ui data ! ')
+    signal_p([userinfo,contractslist,chatrooms],3)
+    self.start_receiving(exitCallback,signal_m)
     self.isLogging = False
 def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir=None, qrCallback=None,loginCallback=None, exitCallback=None):
     if not test_connect():
@@ -102,16 +120,17 @@ def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir
         print('Please scan the QR Code')
     open_QR()
     self.downloadselfheadimg=True
+    print("check login");
     while 1:
         status = self.check_login_new(signal_=signal_p)
         if status == '200':
-            signal_p([conf.updatedata],2)
+            signal_p([config.updatedata],2)
             break
         elif status == '201':
             signal_p([config.pleaselogin],2)
-            logger.info('content QR Code\n', True)
+            logger.info('content QR Code')
         elif status == '408':
-            out.print_line('Reloading QR Code\n', True)
+            print('Reloading QR Code\n')
             signal_p([config.qrreset],2)
             open_QR()
             signal_p([config.DEFAULT_QR,config.QR_width,config.QR_height],1)
@@ -125,8 +144,20 @@ def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir
         utils.clear_screen()
         if os.path.exists(picDir or config.DEFAULT_QR):
             os.remove(picDir or config.DEFAULT_QR)
-        logger.info('Login successfully as %s' % self.storageClass.nickName)
-    
+        print('Login successfully as %s' % self.storageClass.nickName)
+def getself_head_img(self,headurl,username=None):
+    params = {
+        'userName': username or self.storageClass.userName,
+        'skey': self.loginInfo['skey'],
+        }
+    # 'type': 'big',
+    url = 'https://wx2.qq.com'+headurl
+    headers = { 'User-Agent' : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36' }
+    r = self.s.get(url, params=params, stream=True, headers=headers)
+    tempStorage = io.BytesIO()
+    for block in r.iter_content(1024):
+        tempStorage.write(block)
+    return tempStorage.getvalue()
 def push_login(core):
     cookiesDict = core.s.cookies.get_dict()
     if 'wxuin' in cookiesDict:
@@ -152,7 +183,7 @@ def get_QRuuid(self):
         self.uuid = data.group(2)
         return self.uuid
 
-def get_QR(self, uuid=None, enableCmdQR=False, picDir=None, qrCallback=None):
+def get_QR(self, uuid=None, enableCmdQR=True, picDir=None, qrCallback=None):
     uuid = uuid or self.uuid
     picDir = picDir or config.DEFAULT_QR
     qrStorage = io.BytesIO()
@@ -200,7 +231,7 @@ def check_login_new(self, uuid=None,signal_ = None):
     data = re.search(regx, r.text)
     if data and data.group(1) == '200':
         if process_login_info(self, r.text):
-            os.remove(DEFAULT_QR)
+            os.remove(config.DEFAULT_QR)
             return '200'
         else:
             return '400'
@@ -312,7 +343,7 @@ def show_mobile_login(self):
     r = self.s.post(url, data=json.dumps(data), headers=headers)
     return ReturnValue(rawResponse=r)
 
-def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
+def start_receiving(self, exitCallback=None, getReceivingFnOnly=False,signal_m=None):
     self.alive = True
     def maintain_loop():
         retryCount = 0
@@ -327,8 +358,11 @@ def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
                     msgList, contactList = self.get_msg()
                     if msgList:
                         msgList = produce_msg(self, msgList)
+                        signal_m(msgList)
+                        '''
                         for msg in msgList:
                             self.msgList.put(msg)
+                        '''
                     if contactList:
                         chatroomList, otherList = [], []
                         for contact in contactList:
@@ -361,7 +395,6 @@ def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
         maintainThread = threading.Thread(target=maintain_loop)
         maintainThread.setDaemon(True)
         maintainThread.start()
-
 def sync_check(self):
     url = '%s/synccheck' % self.loginInfo.get('syncUrl', self.loginInfo['url'])
     params = {
