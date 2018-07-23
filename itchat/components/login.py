@@ -137,6 +137,19 @@ def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir
     logger.info("########################### init login info #############################")
     self.web_init()
     self.show_mobile_login()
+    contractslist = self.get_contact(True)
+    print('#get chatrooms data! ')
+    chatrooms=self.get_chatrooms()
+    if hasattr(loginCallback, '__call__'):
+        r = loginCallback()
+    else:
+        utils.clear_screen()
+        if os.path.exists(picDir or config.DEFAULT_QR):
+            os.remove(picDir or config.DEFAULT_QR)
+        print('Login successfully as %s' % self.storageClass.nickName)
+    userinfo = self.web_init()
+    print(userinfo)
+    self.show_mobile_login()
     self.get_contact(True)
     if hasattr(loginCallback, '__call__'):
         r = loginCallback()
@@ -145,6 +158,22 @@ def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir
         if os.path.exists(picDir or config.DEFAULT_QR):
             os.remove(picDir or config.DEFAULT_QR)
         print('Login successfully as %s' % self.storageClass.nickName)
+    if self.downloadselfheadimg:
+        print('#download self head image! ')
+        try:
+            temp=self.getself_head_img(userinfo['User']["HeadImgUrl"],userinfo['User']["UserName"])
+            im = pilimgtools.open(io.BytesIO(temp))
+            im.save(os.path.join('dist',userinfo['User']["UserName"]),'png')
+        except Exception:
+            print(u'加载自己的头像失败： ')
+    else:
+        print('#self head image has download ! ')
+        im = pilimgtools.open(os.path.join('dist','self'))
+        im.save(os.path.join('dist',userinfo['User']['UserName']),'png')
+    print('#init main ui data ! ')
+    signal_p([userinfo,contractslist,chatrooms],3)
+    self.start_receiving(exitCallback,signal_m)
+    self.isLogging = False
 def getself_head_img(self,headurl,username=None):
     params = {
         'userName': username or self.storageClass.userName,
