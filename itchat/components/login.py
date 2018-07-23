@@ -1,4 +1,5 @@
 import os, time, re, io
+import base64
 import threading
 import json, xml.dom.minidom
 import random
@@ -24,11 +25,13 @@ def load_login(core):
     core.get_QRuuid        = get_QRuuid
     core.get_QR            = get_QR
     core.check_login       = check_login
+    core.check_login_new   = check_login_new
     core.web_init          = web_init
     core.show_mobile_login = show_mobile_login
     core.start_receiving   = start_receiving
     core.get_msg           = get_msg
     core.logout            = logout
+    core.new_login         = new_login
 
 def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
         loginCallback=None, exitCallback=None):
@@ -80,7 +83,50 @@ def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
         logger.info('Login successfully as %s' % self.storageClass.nickName)
     self.start_receiving(exitCallback)
     self.isLogging = False
-
+def new_login(self, signal_p,signal_m,hotReload=False, enableCmdQR=False, picDir=None, qrCallback=None,loginCallback=None, exitCallback=None):
+    if not test_connect():
+        logger.info("You can't get access to internet or wechat domain, so exit.")
+        sys.exit()
+    if self.alive or self.isLogging:
+        logger.warning('itchat has already logged in.')
+        sys.exit()
+    def open_QR():
+        for get_count in range(10):
+            logger.info('get QR-UUID')
+            while not self.get_QRuuid(): time.sleep(1)
+            logger.info('generate QR-Code Image')
+            if self.get_QR(): break
+            elif get_count >= 9:
+                logger.info('Failed to get QR Code, please restart the program')
+                sys.exit()
+        print('Please scan the QR Code')
+    open_QR()
+    self.downloadselfheadimg=True
+    while 1:
+        status = self.check_login_new(signal_=signal_p)
+        if status == '200':
+            signal_p([conf.updatedata],2)
+            break
+        elif status == '201':
+            signal_p([config.pleaselogin],2)
+            logger.info('content QR Code\n', True)
+        elif status == '408':
+            out.print_line('Reloading QR Code\n', True)
+            signal_p([config.qrreset],2)
+            open_QR()
+            signal_p([config.DEFAULT_QR,config.QR_width,config.QR_height],1)
+    logger.info("########################### init login info #############################")
+    self.web_init()
+    self.show_mobile_login()
+    self.get_contact(True)
+    if hasattr(loginCallback, '__call__'):
+        r = loginCallback()
+    else:
+        utils.clear_screen()
+        if os.path.exists(picDir or config.DEFAULT_QR):
+            os.remove(picDir or config.DEFAULT_QR)
+        logger.info('Login successfully as %s' % self.storageClass.nickName)
+    
 def push_login(core):
     cookiesDict = core.s.cookies.get_dict()
     if 'wxuin' in cookiesDict:
@@ -142,7 +188,34 @@ def check_login(self, uuid=None):
         return data.group(1)
     else:
         return '400'
-
+def check_login_new(self, uuid=None,signal_ = None):
+    uuid = uuid or self.uuid
+    url = '%s/cgi-bin/mmwebwx-bin/login' % config.BASE_URL
+    localTime = int(time.time())
+    params = 'loginicon=true&uuid=%s&tip=1&r=%s&_=%s' % (
+        uuid, int(-localTime / 1579), localTime)
+    headers = { 'User-Agent' : config.USER_AGENT }
+    r = self.s.get(url, params=params, headers=headers)
+    regx = r'window.code=(\d+)'
+    data = re.search(regx, r.text)
+    if data and data.group(1) == '200':
+        if process_login_info(self, r.text):
+            os.remove(DEFAULT_QR)
+            return '200'
+        else:
+            return '400'
+    elif data and data.group(1) == '201':
+        if self.downloadselfheadimg:
+            str_img=r.text.replace('window.code=201;window.userAvatar = \'data:img/jpg;base64,','').replace('\';','')
+            with open(os.path.join('dist','self'), 'wb') as f:f.write(base64.b64decode(str_img)  )
+            self.downloadselfheadimg=False
+            signal_([],4)
+            signal_([config.Self_Image_Path,config.Self_Image_Width,config.Self_Image_Height],1)
+        return '201'
+    elif data and data.group(1) == '408':
+        return '408'
+    else:
+        return '400'
 def process_login_info(core, loginContent):
     ''' when finish login (scanning qrcode)
      * syncUrl and fileUploadingUrl will be fetched
